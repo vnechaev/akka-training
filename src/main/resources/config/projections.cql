@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS akka.colorstats ( color int, count counter, PRIMARY KEY (color));

@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: labs-app
+  name: labs-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: labs-app
+  template:
+    metadata:
+      labels:
+        app: labs-app
+        actorSystemName: labs
+    spec:
+      containers:
+        - name: labs-app
+          image: localhost:5000/labs-app:1.0-SNAPSHOT
+          imagePullPolicy: Always
+          ports:
+            # akka remoting
+            - name: remoting
+              containerPort: 25520
+              protocol: TCP
+            # akka-management and bootstrap
+            - name: management
+              containerPort: 8558
+              protocol: TCP
+            # http server
+            - name: http
+              containerPort: 9000
+              protocol: TCP
+          env:
+            - name: CAS_CONTACT
+              value: cassandra.labs.svc.cluster.local:9042
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: labs-app
+spec:
+  selector:
+    app: labs-app
+  type: NodePort
+  ports:
+    - protocol: TCP
+      port: 9000
+      targetPort: 9000
+      nodePort: 30080
+---
+kind: Ingress
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: labs-app-ingress
+  labels:
+    app: labs-app
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: \"false\"
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: labs-app
+                port:
+                  name: http

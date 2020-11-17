@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Painter 1</title>
+</head>
+<body>
+
+<style>
+    .colors {
+        display: block;
+    }
+
+    .colors li {
+        width: 40px;
+        height: 40px;
+        display: inline-block;
+    }
+
+    #canvas {
+        width: 600px;
+        height: 600px;
+        border: 1px solid gray;
+    }
+</style>
+<ul class="colors">
+    <li onclick="setColor('000000')" style="background-color: #000000"></li>
+    <li onclick="setColor('FF0000')" style="background-color: #FF0000"></li>
+    <li onclick="setColor('00FF00')" style="background-color: #00FF00"></li>
+    <li onclick="setColor('0000FF')" style="background-color: #0000FF"></li>
+</ul>
+
+<canvas id="canvas" width="600" height="600"></canvas>
+
+
+<script>
+    let ws = connect("ws://" + window.location.host + "/ws/painter");
+
+    function connect(url) {
+        let wait = 0;
+        let webSocket = new WebSocket(url);
+        webSocket.onmessage = data => receive(data.data);
+        webSocket.onopen = e => {
+            console.log("Connected.")
+            wait = 0;
+            sendShow();
+        };
+        webSocket.onerror = e => console.log("Error");
+        webSocket.onclose = e => {
+            wait = (wait + 500) * 2;
+            console.log("Closed. Retry in " + wait);
+            setTimeout(() => {
+                ws = connect(url);
+            }, wait);
+        };
+        return webSocket;
+    }
+
+    let color = 0;
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = "#000000"
+
+    let drawing = false;
+
+    function setColor(v) {
+        console.log("Color: " + v)
+        color = parseInt(v, 16);
+        ctx.fillStyle = "#" + v;
+    }
+
+    function onPaint(event) {
+        const x = event.offsetX;
+        const y = event.offsetY;
+        doPaint(x, y);
+        sendPaint(x, y, color);
+    }
+
+    function doPaint(x, y) {
+        ctx.fillRect(x, y, 1, 1);
+    }
+
+    canvas.addEventListener('mousedown', e => {
+        drawing = true;
+        onPaint(e);
+    });
+    canvas.addEventListener('mousemove', e => {
+        if (drawing) onPaint(e);
+    });
+    canvas.addEventListener('mouseup', e => drawing = false);
+
+    function receive(data) {
+        if (data.startsWith('+ show 0 0 [[')) {
+            let array = JSON.parse(data.substring(11));
+            let image = array.flatMap(row => row.flatMap(cell => colorToBytes(cell)));
+            let imageData = new ImageData(Uint8ClampedArray.from(image), 600, 600);
+            ctx.putImageData(imageData, 0, 0);
+        } else if (data.startsWith('+ pixel single')) {
+            let xIdx = data.indexOf(" ", 15);
+            let yIdx = data.indexOf(" ", xIdx + 1);
+            let x = parseInt(data.substring(15, xIdx));
+            let y = parseInt(data.substring(xIdx + 1, yIdx));
+            let c = parseInt(data.substring(yIdx + 1));
+            let imageData = new ImageData(Uint8ClampedArray.from(colorToBytes(c)), 1, 1);
+            ctx.putImageData(imageData, x, y);
+        }
+    }
+
+    function sendShow() {
+        ws.send("show 0 0 600 600");
+    }
+
+    function sendPaint(x, y, c) {
+        ws.send("paint " + x + " " + y + " " + c);
+    }
+
+    function colorToBytes(color) {
+        return [(color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF, 0xFF];
+    }
+
+
+</script>
+
+</body>
+</html>

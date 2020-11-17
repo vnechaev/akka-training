@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Painter 1</title>
+</head>
+<body>
+
+<style>
+    .colors {
+        display: block;
+    }
+
+    .colors li {
+        width: 40px;
+        height: 40px;
+        display: inline-block;
+    }
+
+    #cloudcanvas {
+        width: 2100px;
+        height: 2100px;
+        display: block;
+        line-height: 0;
+    }
+
+    #cloudcanvas > canvas {
+        width: 200px;
+        height: 200px;
+        border: 1px solid lightblue;
+        display: inline-block;
+    }
+</style>
+<ul class="colors">
+    <li onclick="setColor('000000')" style="background-color: #000000"></li>
+    <li onclick="setColor('FF0000')" style="background-color: #FF0000"></li>
+    <li onclick="setColor('00FF00')" style="background-color: #00FF00"></li>
+    <li onclick="setColor('0000FF')" style="background-color: #0000FF"></li>
+</ul>
+
+<div id="cloudcanvas"></div>
+
+<script>
+    const tileWidth = 200;
+    const tileHeight = 200;
+    const canvasWidth = 2000;
+    const canvasHeight = 2000;
+
+    const cloudCanvas = document.getElementById('cloudcanvas');
+
+    const tiles = {};
+
+    for (let x = 0; x < canvasWidth; x = x + tileWidth)
+        for (let y = 0; y < canvasHeight; y = y + tileHeight) {
+            let c = document.createElement("canvas");
+            c.setAttribute("width", tileWidth);
+            c.setAttribute("height", tileHeight);
+            c.dataset["baseX"] = x;
+            c.dataset["baseY"] = y;
+            tiles[x + "x" + y] = c;
+            cloudCanvas.appendChild(c);
+        }
+
+    let ws = connect("ws://" + window.location.host + "/ws/cloudpainter");
+
+    function connect(url) {
+        let wait = 0;
+        let webSocket = new WebSocket(url);
+        webSocket.onmessage = data => receive(data.data);
+        webSocket.onopen = e => {
+            console.log("Connected.")
+            wait = 0;
+            sendShow();
+        };
+        webSocket.onerror = e => console.log("Error");
+        webSocket.onclose = e => {
+            wait = (wait + 500) * 2;
+            console.log("Closed. Retry in " + wait);
+            setTimeout(() => {
+                ws = connect(url);
+            }, wait);
+        };
+        return webSocket;
+    }
+
+    let color = 0;
+    let fillStyle = "#000000";
+
+    let drawing = false;
+
+    function setColor(v) {
+        console.log("Color: " + v)
+        color = parseInt(v, 16);
+        fillStyle = "#" + v;
+    }
+
+    function onPaint(event) {
+        const x = event.offsetX;
+        const y = event.offsetY;
+        const ctx = event.target.getContext('2d');
+        ctx.fillStyle = fillStyle;
+        ctx.fillRect(x, y, 1, 1);
+        let baseX = parseInt(event.target.dataset["baseX"]);
+        let baseY = parseInt(event.target.dataset["baseY"]);
+        sendPaint(baseX + x, baseY + y, color);
+    }
+
+    cloudCanvas.addEventListener('mousedown', e => {
+        drawing = true;
+        onPaint(e);
+    });
+    cloudCanvas.addEventListener('mousemove', e => {
+        if (drawing) onPaint(e);
+    });
+    cloudCanvas.addEventListener('mouseup', e => drawing = false);
+
+    function receive(data) {
+        if (data.startsWith('+ show ')) {
+            let xIdx = 7;
+            let yIdx = data.indexOf(' ', xIdx + 1);
+            let aIdx = data.indexOf(' ', yIdx + 1);
+            let x = data.substring(xIdx, yIdx);
+            let y = data.substring(yIdx + 1, aIdx);
+            let array = JSON.parse(data.substring(aIdx + 1));
+            let image = array
+                .flatMap(
+                    row => row.flatMap(
+                        cell => [(cell >> 16) & 0xFF, (cell >> 8) & 0xFF, cell & 0xFF, 0xFF]
+                    )
+                );
+            let imageData = new ImageData(Uint8ClampedArray.from(image), tileWidth, tileHeight);
+
+            const canvas = tiles[x + "x" + y];
+            const ctx = canvas.getContext('2d');
+            ctx.putImageData(imageData, 0, 0);
+        } else if (data.startsWith('+ pixel cloud')) {
+            let xIdx = data.indexOf(" ", 14);
+            let yIdx = data.indexOf(" ", xIdx + 1);
+            let x = parseInt(data.substring(14, xIdx));
+            let y = parseInt(data.substring(xIdx + 1, yIdx));
+            let c = parseInt(data.substring(yIdx + 1));
+
+            let baseX = x - x % tileWidth;
+            let baseY = y - y % tileHeight;
+            const canvas = tiles[baseX + "x" + baseY];
+            const ctx = canvas.getContext('2d');
+            let imageData = new ImageData(Uint8ClampedArray.from(colorToBytes(c)), 1, 1);
+            ctx.putImageData(imageData, x - baseX, y - baseY);
+        }
+    }
+
+    function sendShow() {
+        for (let x = 0; x < canvasWidth; x = x + tileWidth)
+            for (let y = 0; y < canvasHeight; y = y + tileHeight)
+                ws.send("show " + x + " " + y + " " + tileWidth + " " + tileHeight);
+    }
+
+    function sendPaint(x, y, c) {
+        ws.send("paint " + x + " " + y + " " + c);
+    }
+
+    function colorToBytes(color) {
+        return [(color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF, 0xFF];
+    }
+</script>
+</body>
+</html>

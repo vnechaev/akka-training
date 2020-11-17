@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Painter 1</title>
+</head>
+<body>
+<style>
+    .panels {
+        width: 100%;
+        display: flex;
+        flex-flow: row;
+        flex-wrap: wrap;
+    }
+
+    .account-panel {
+        padding: 20px;
+        margin: 10px;
+        border: 1px solid #CCC;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .transfer-panel {
+        padding: 20px;
+        margin: 10px;
+        border: 1px solid #CCC;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .errors {
+        padding: 20px;
+        margin: 10px;
+        border: 1px solid #CCC;
+    }
+</style>
+
+<div class="panels">
+    <div class="account-panel">
+        <label>Account:</label> <input type="number" id="account" value="1"/>
+        <label>Value:</label> <input type="number" id="value"/>
+        <div style="grid-column-end: span 2; margin:25px auto">
+            <button onclick="deposit()">Deposit</button>
+            <button onclick="withdraw()">Withdraw</button>
+            <button onclick="balance()">Check Balance</button>
+        </div>
+        <div style="grid-column-end: span 2;">Response: <span id="response">none</span></div>
+    </div>
+    <div class="transfer-panel">
+        <label>Transfer Id:</label> <input type="number" id="transferid" value=""/>
+        <label>From Account:</label> <input type="number" id="fromaccount" value=""/>
+        <label>To Account:</label> <input type="number" id="toaccount" value=""/>
+        <label>Transfer Value:</label> <input type="number" id="transfervalue"/>
+        <div style="grid-column-end: span 2; margin:25px auto">
+            <button onclick="transfer()">Transfer</button>
+            <button onclick="checkTransfer()">Check</button>
+        </div>
+        <div style="grid-column-end: span 2;">Response: <span id="transferresponse">none</span></div>
+    </div>
+    <div class="errors">Error: <span id="errors">none</span></div>
+</div>
+
+<script>
+    let ws = connect("ws://" + window.location.host + "/ws/account");
+
+    function connect(url) {
+        let wait = 0;
+        let webSocket = new WebSocket(url);
+        webSocket.onmessage = data => receive(data.data);
+        webSocket.onopen = e => {
+            console.log("Connected.")
+            balance()
+            wait = 0;
+        };
+        webSocket.onerror = e => console.log("Error");
+        webSocket.onclose = e => {
+            wait = (wait + 500) * 2;
+            console.log("Closed. Retry in " + wait);
+            setTimeout(() => {
+                ws = connect(url);
+            }, wait);
+        };
+        return webSocket;
+    }
+
+    const errors = document.getElementById('errors');
+
+    const account = document.getElementById('account');
+    const value = document.getElementById('value');
+    const response = document.getElementById('response');
+
+    const transferId = document.getElementById('transferid');
+    const fromAccount = document.getElementById('fromaccount');
+    const toAccount = document.getElementById('toaccount');
+    const transferValue = document.getElementById('transfervalue');
+    const transferResponse = document.getElementById('transferresponse');
+
+    function deposit() {
+        send("deposit " + account.value + " " + value.value);
+    }
+
+    function withdraw() {
+        send("withdraw " + account.value + " " + value.value);
+    }
+
+    function balance() {
+        send("balance " + account.value);
+    }
+
+    function transfer() {
+        send("transfer " + transferId.value + " " + fromAccount.value + " " + toAccount.value + " " + transferValue.value);
+    }
+
+    function checkTransfer() {
+        send("check " + transferId.value);
+    }
+
+    function receive(data) {
+        console.log("Received " + data)
+        if (data.startsWith("-")) {
+            errors.innerText = data.substring(2);
+        } else if (data.startsWith('+ balance')) {
+            let args = data.split(" ");
+            let accountNumber = args[2];
+            let value = args[3];
+            response.innerText = "Account " + accountNumber + ", balance " + value;
+        } else if (data.startsWith('+ transfer')) {
+            let args = data.split(" ");
+            let accountNumber = args[2];
+            let value = args[3];
+            transferResponse.innerText = "Transfer " + accountNumber + ", balance " + value;
+        }
+    }
+
+    function send(value) {
+        response.innerText = "none";
+        transferResponse.innerText = "none";
+        errors.innerText = "none";
+        ws.send(value);
+    }
+
+
+</script>
+
+</body>
+</html>
